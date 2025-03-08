@@ -6,9 +6,20 @@ This is a simple port forwarding server application that forwards incoming TCP c
 The application is written in Scala and uses Akka Streams for handling the TCP connections.
 When a client connects to the server, the server establishes a connection to the specified destination address and port and forwards data between the client and the destination.
 
-Technologies used:
+**The application runs concurrently.** The concurrency model is based on the Akka Actor System and makes application efficient at handling multiple network connections simultaneously without blocking operations.
+
+### The application solves different business problems, such as:
+
+- Secure remote access - allows to access internal services securely from external networks without exposing them to the internet.
+- Development and testing - allows to test services on a local machine that are running on a remote server.
+- Temporary service exposure - provides a way to temporarily expose local services to external users without permanent infrastructure changes.
+- API and service integration - facilitates connections between services that may be on different networks or behind firewalls.
+- Legacy system access - helps access legacy systems that may have network constraints by providing modern interface to route traffic.
+
+### Technologies used:
+
 - Scala 2.13
-- ScalaFx 22.0.0-R33
+- ScalaFX 22.0.0-R33 (for GUI)
 
 - Akka Actor 2.8.8
 - Akka Streams 2.8.8
@@ -16,6 +27,8 @@ Technologies used:
 
 - Cats 2.13.0
 - Cats Effect 3.5.7
+
+- ScalaTest 3.2.19
 
 - SBT 1.10.7
 
@@ -48,3 +61,8 @@ To start the application, go to the `target/scala-2.13` folder run the following
 In the command line interface mode, application is configured in attached `application.conf` file.
 
 In the graphical user interface mode, you can configure the application using the GUI.
+
+### Docker image ###
+
+The application can run as a Docker container.
+To build a Docker image, you need to have Docker installed and running on your machine.
