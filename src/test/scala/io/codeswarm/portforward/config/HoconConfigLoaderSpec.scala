@@ -1,34 +1,43 @@
 package io.codeswarm.portforward.config
 
+import io.codeswarm.portforward.error.ConfigurationLoadException
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 
 /**
- * Tests configuration loading from the bundled application.conf.
+ * Tests the milestone 0.2 HOCON configuration adapter.
  */
-final class HoconConfigLoaderSpec extends AnyFunSuite with Matchers {
+final class HoconConfigLoaderSpec
+    extends AnyFunSuite
+    with Matchers {
 
-  /** Ensures the default classpath configuration remains loadable. */
+  /** Ensures the bundled nested listen/target configuration is loadable. */
   test("load reads default classpath configuration") {
-    val loader = new HoconConfigLoader
-
-    val result = loader.load(None)
+    val result =
+      new HoconConfigLoader().load(None)
 
     result.isRight shouldBe true
-    val config = result.toOption.get
+
+    val config =
+      result.toOption.get
+
     config.listen.host shouldBe "127.0.0.1"
     config.listen.port shouldBe 8090
     config.target.host shouldBe "example.com"
     config.target.port shouldBe 80
   }
 
-  /** Ensures missing explicit files return a descriptive error. */
+  /** Ensures missing explicit files return a typed error. */
   test("load reports a missing explicit file") {
-    val loader = new HoconConfigLoader
+    val result =
+      new HoconConfigLoader()
+        .load(Some("definitely-missing.conf"))
 
-    val result = loader.load(Some("definitely-missing.conf"))
+    result.left.toOption.get shouldBe
+      a[ConfigurationLoadException]
 
-    result.isLeft shouldBe true
-    result.left.toOption.get.message should include("does not exist")
+    result.left.toOption.get.getMessage should include(
+      "does not exist"
+    )
   }
 }

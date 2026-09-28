@@ -1,29 +1,39 @@
 package io.codeswarm.portforward.cli
 
-import io.codeswarm.portforward.cli.CliCommand.{Help, Start, StartFromConfig}
+import io.codeswarm.portforward.cli.CliCommand._
 import io.codeswarm.portforward.domain.{Endpoint, ForwardingConfig}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 
 /**
- * Tests the pure command-line parser.
+ * Tests the side-effect-free CLI parser.
  */
-final class CommandLineParserSpec extends AnyFunSuite with Matchers {
+final class CommandLineParserSpec
+    extends AnyFunSuite
+    with Matchers {
 
-  /** Verifies the default configuration form. */
-  test("parse uses classpath configuration for empty arguments") {
-    CommandLineParser.parse(Array.empty) shouldBe Right(StartFromConfig(None))
+  /** Verifies default classpath configuration behavior. */
+  test("parse uses classpath config for empty arguments") {
+    CommandLineParser.parse(Array.empty) shouldBe
+      Right(StartFromConfig(None))
   }
 
   /** Verifies explicit configuration file support. */
-  test("parse accepts one configuration file path") {
+  test("parse accepts one config file path") {
     CommandLineParser.parse(Array("custom.conf")) shouldBe
       Right(StartFromConfig(Some("custom.conf")))
   }
 
-  /** Verifies the direct four-argument forwarding form. */
-  test("parse accepts direct endpoint arguments") {
-    CommandLineParser.parse(Array("127.0.0.1", "9000", "localhost", "8080")) shouldBe
+  /** Verifies direct endpoint arguments. */
+  test("parse accepts explicit endpoints") {
+    CommandLineParser.parse(
+      Array(
+        "127.0.0.1",
+        "9000",
+        "localhost",
+        "8080"
+      )
+    ) shouldBe
       Right(
         Start(
           ForwardingConfig(
@@ -34,13 +44,43 @@ final class CommandLineParserSpec extends AnyFunSuite with Matchers {
       )
   }
 
-  /** Verifies help parsing. */
+  /** Verifies help command parsing. */
   test("parse recognizes help") {
-    CommandLineParser.parse(Array("--help")) shouldBe Right(Help)
+    CommandLineParser.parse(Array("--help")) shouldBe
+      Right(Help)
   }
 
-  /** Verifies malformed ports are rejected. */
+  /** Verifies version command parsing. */
+  test("parse recognizes version") {
+    CommandLineParser.parse(Array("--version")) shouldBe
+      Right(Version)
+  }
+
+  /** Verifies bundled config validation command. */
+  test("parse recognizes default config validation") {
+    CommandLineParser.parse(Array("--validate")) shouldBe
+      Right(ValidateConfig(None))
+  }
+
+  /** Verifies explicit config validation command. */
+  test("parse recognizes explicit config validation") {
+    CommandLineParser.parse(
+      Array("--validate", "custom.conf")
+    ) shouldBe
+      Right(ValidateConfig(Some("custom.conf")))
+  }
+
+  /** Verifies malformed numeric ports are rejected. */
   test("parse rejects non-numeric ports") {
-    CommandLineParser.parse(Array("127.0.0.1", "bad", "localhost", "8080")).isLeft shouldBe true
+    CommandLineParser
+      .parse(
+        Array(
+          "127.0.0.1",
+          "bad",
+          "localhost",
+          "8080"
+        )
+      )
+      .isLeft shouldBe true
   }
 }
