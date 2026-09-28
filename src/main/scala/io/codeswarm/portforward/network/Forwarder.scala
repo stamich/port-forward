@@ -1,39 +1,39 @@
 package io.codeswarm.portforward.network
 
-import akka.Done
 import io.codeswarm.portforward.domain.{ForwardingConfig, ForwardingStatus}
+import org.apache.pekko.Done
 
 import scala.concurrent.Future
 
 /**
- * Defines the lifecycle of a transport-level forwarding implementation.
+ * Transport lifecycle abstraction used by the application layer.
  *
- * The interface follows the Dependency Inversion Principle: presentation
- * layers depend on this abstraction instead of on Akka TCP details.
+ * Presentation and orchestration code depends on this trait instead of Pekko
+ * TCP implementation details.
  */
 trait Forwarder {
 
   /**
-   * Starts forwarding according to the supplied rule.
+   * Starts forwarding according to the supplied configuration.
    *
-   * @param config validated forwarding configuration.
-   * @return a future completed when the listener has been bound.
+   * @param config validated forwarding rule.
+   * @return future completed after the listener is successfully bound.
    */
   def start(config: ForwardingConfig): Future[Done]
 
   /**
-   * Stops accepting new connections by unbinding the listener.
+   * Stops accepting new client connections.
    *
-   * Existing Akka streams are allowed to finish naturally.
+   * The method is idempotent when the forwarder is already stopped.
    *
-   * @return a future completed after the listener has been unbound.
+   * @return future completed after the listener is unbound.
    */
   def stop(): Future[Done]
 
   /**
-   * Returns the current forwarding lifecycle state.
+   * Returns the current public lifecycle state.
    *
-   * @return current state.
+   * @return current forwarding state.
    */
   def status: ForwardingStatus
 }
