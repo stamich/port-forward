@@ -1,65 +1,55 @@
-ThisBuild / version := "0.1.0-SNAPSHOT"
-ThisBuild / scalaVersion := "2.13.16"
 ThisBuild / organization := "io.codeswarm"
+ThisBuild / version := "0.1.1"
+ThisBuild / scalaVersion := "2.13.16"
 
-Compile / mainClass := Some("io.codeswarm.portforward.ForwardServerMainApplication")
-Compile / packageBin / mainClass := Some("io.codeswarm.portforward.ForwardServerMainApplication")
-
-Compile / packageOptions += Package.ManifestAttributes(
-  ("Main-Class", "io.codeswarm.portforward.ForwardServerMainApplication")
-)
+lazy val akkaVersion = "2.8.8"
+lazy val scalaFxVersion = "22.0.0-R33"
+lazy val scalaTestVersion = "3.2.19"
+lazy val logbackVersion = "1.5.18"
 
 lazy val root = (project in file("."))
   .settings(
     name := "scala-port-forward",
+    Compile / mainClass := Some("io.codeswarm.portforward.ForwardServerMainApplication"),
+    Compile / packageBin / mainClass := Some("io.codeswarm.portforward.ForwardServerMainApplication"),
 
-    // Assembly settings for fat JAR
-    assembly / mainClass := Some("io.codeswarm.portforward.ForwardServerMainApplication"),
-    assembly / assemblyJarName := "port-forward-server.jar",
+    scalacOptions ++= Seq(
+      "-deprecation",
+      "-feature",
+      "-unchecked",
+      "-Xlint"
+    ),
 
-    // Handle merge conflicts during assembly
-    assembly / assemblyMergeStrategy := {
-      case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
-      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
-      case "reference.conf" => MergeStrategy.concat
-      case x => MergeStrategy.first
-    },
-
-    // Library dependencies
     libraryDependencies ++= {
       val osName = System.getProperty("os.name") match {
-        case n if n.startsWith("Linux") => "linux"
-        case n if n.startsWith("Mac") => "mac"
+        case n if n.startsWith("Linux")   => "linux"
+        case n if n.startsWith("Mac")     => "mac"
         case n if n.startsWith("Windows") => "win"
-        case _ => throw new Exception("Unknown platform!")
+        case other                        => sys.error(s"Unsupported operating system: $other")
       }
 
       Seq(
-        // ScalaFX
-        "org.scalafx" %% "scalafx" % "22.0.0-R33",
+        "com.typesafe.akka" %% "akka-actor" % akkaVersion,
+        "com.typesafe.akka" %% "akka-stream" % akkaVersion,
+        "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
+        "ch.qos.logback" % "logback-classic" % logbackVersion,
+        "org.scalafx" %% "scalafx" % scalaFxVersion,
+        "org.scalatest" %% "scalatest" % scalaTestVersion % Test
+      ) ++
+        Seq("base", "controls", "graphics")
+          .map(module => "org.openjfx" % s"javafx-$module" % "22" classifier osName)
+    },
 
-        // Akka
-        "com.typesafe.akka" %% "akka-actor" % "2.8.8",
-        "com.typesafe.akka" %% "akka-actor-typed" % "2.8.8",
-        "com.typesafe.akka" %% "akka-actor-testkit-typed" % "2.8.8" % "test",
-        "com.typesafe.akka" %% "akka-stream" % "2.8.8",
-        "com.typesafe.akka" %% "akka-stream-testkit" % "2.8.8",
-        "com.typesafe.akka" %% "akka-slf4j" % "2.8.8",
-        "com.typesafe.akka" %% "akka-http" % "10.5.3",
-        "com.typesafe.akka" %% "akka-http-core" % "10.5.3",
+    Test / parallelExecution := false,
 
-        // Cats
-        "org.typelevel" %% "cats-core" % "2.13.0",
-        "org.typelevel" %% "cats-testkit" % "2.13.0" % "test",
-        "org.typelevel" %% "cats-effect" % "3.5.7",
-
-        // ScalaTest
-        "org.scalatest" %% "scalatest" % "3.2.19" % "test",
-        "org.scalatest" %% "scalatest-funsuite" % "3.2.19" % "test",
-        "org.scalatestplus" %% "mockito-4-11" % "3.2.18.0" % "test",
-
-        "org.mockito" % "mockito-core" % "5.16.0" % "test",
-      ) ++ Seq("base", "controls", "fxml", "graphics", "media", "swing", "web")
-        .map(m => "org.openjfx" % s"javafx-$m" % "22" classifier osName)
+    assembly / mainClass := Some("io.codeswarm.portforward.ForwardServerMainApplication"),
+    assembly / assemblyJarName := "port-forward-server.jar",
+    assembly / test := (Test / test).value,
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
+      case PathList("META-INF", _ @ _*)         => MergeStrategy.discard
+      case "reference.conf"                     => MergeStrategy.concat
+      case "application.conf"                   => MergeStrategy.concat
+      case _                                    => MergeStrategy.first
     }
   )
