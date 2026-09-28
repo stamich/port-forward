@@ -7,7 +7,7 @@ import io.codeswarm.portforward.domain.ForwardingConfig
 import io.codeswarm.portforward.runtime.ApplicationRuntime
 
 import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, Future}
+import scala.concurrent.{Await, ExecutionContextExecutor, Future}
 import scala.io.StdIn
 import scala.util.{Failure, Success}
 
@@ -73,7 +73,7 @@ object PortForwardCliApp {
    */
   private def run(config: ForwardingConfig): Unit = {
     val runtime = ApplicationRuntime.create()
-    implicit val executionContext =
+    implicit val executionContext: ExecutionContextExecutor =
       runtime.actorSystem.dispatcher
 
     val started =
