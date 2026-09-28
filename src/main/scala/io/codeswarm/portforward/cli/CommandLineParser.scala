@@ -1,6 +1,7 @@
 package io.codeswarm.portforward.cli
 
-import io.codeswarm.portforward.cli.CliCommand.{Help, Start, StartFromConfig}
+import io.codeswarm.portforward.Version
+import io.codeswarm.portforward.cli.CliCommand.{Help, Start, StartFromConfig, ValidateConfig}
 import io.codeswarm.portforward.domain.{Endpoint, ForwardingConfig}
 
 import scala.util.Try
@@ -11,16 +12,10 @@ import scala.util.Try
 object CommandLineParser {
 
   /**
-   * Parses arguments accepted after the optional `--cli` mode selector.
-   *
-   * Supported forms:
-   *   - no arguments: load classpath `application.conf`
-   *   - one argument: load the supplied configuration file
-   *   - four arguments: `<local-host> <local-port> <remote-host> <remote-port>`
-   *   - `--help` or `-h`: show usage
+   * Parses arguments passed after the global `--cli` selector.
    *
    * @param args raw CLI arguments.
-   * @return parsed command or explanatory error.
+   * @return parsed command or a descriptive syntax error.
    */
   def parse(args: Array[String]): Either[String, CliCommand] =
     args.toList match {
@@ -29,6 +24,15 @@ object CommandLineParser {
 
       case ("--help" | "-h") :: Nil =>
         Right(Help)
+
+      case "--version" :: Nil =>
+        Right(CliCommand.Version)
+
+      case "--validate" :: Nil =>
+        Right(ValidateConfig(None))
+
+      case "--validate" :: configPath :: Nil =>
+        Right(ValidateConfig(Some(configPath)))
 
       case configPath :: Nil =>
         Right(StartFromConfig(Some(configPath)))
@@ -45,36 +49,40 @@ object CommandLineParser {
         )
 
       case _ =>
-        Left("Invalid command-line arguments. Use --help to display supported forms.")
+        Left(
+          "Invalid command-line arguments. Use --help to display supported forms."
+        )
     }
 
   /**
-   * Parses one TCP port.
+   * Parses one numeric TCP port.
    *
    * @param name logical port name used in error messages.
-   * @param value textual numeric value.
-   * @return parsed integer or explanatory error.
+   * @param value textual number.
+   * @return integer value or parsing error.
    */
-  private def parsePort(name: String, value: String): Either[String, Int] =
-    Try(value.toInt).toEither.left.map(_ => s"$name port must be a number: $value")
+  private def parsePort(
+      name: String,
+      value: String
+  ): Either[String, Int] =
+    Try(value.toInt).toEither.left.map { _ =>
+      s"$name port must be a number: $value"
+    }
 
   /**
-   * Returns the CLI usage text.
+   * Returns CLI usage text.
    *
-   * @return multi-line help content.
+   * @return multi-line usage documentation.
    */
   def usage: String =
-    """Port Forward Server 0.1.1
-      |
-      |Usage:
-      |  java -jar port-forward-server.jar --cli
-      |  java -jar port-forward-server.jar --cli <config-file>
-      |  java -jar port-forward-server.jar --cli <local-host> <local-port> <remote-host> <remote-port>
-      |  java -jar port-forward-server.jar --cli --help
-      |
-      |Examples:
-      |  java -jar port-forward-server.jar --cli
-      |  java -jar port-forward-server.jar --cli ./application.conf
-      |  java -jar port-forward-server.jar --cli 127.0.0.1 8090 example.com 80
-      |""".stripMargin
+    s"""Port Forward Server ${Version.Current}
+       |
+       |Usage:
+       |  java -jar port-forward-server-${Version.Current}.jar --cli
+       |  java -jar port-forward-server-${Version.Current}.jar --cli <config-file>
+       |  java -jar port-forward-server-${Version.Current}.jar --cli <local-host> <local-port> <remote-host> <remote-port>
+       |  java -jar port-forward-server-${Version.Current}.jar --cli --validate [config-file]
+       |  java -jar port-forward-server-${Version.Current}.jar --cli --version
+       |  java -jar port-forward-server-${Version.Current}.jar --cli --help
+       |""".stripMargin
 }
