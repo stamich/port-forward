@@ -1,61 +1,55 @@
 # Port Forward Server
 
-A small TCP port-forwarding application written in Scala and based on Akka Streams.
+A small TCP port-forwarding application written in Scala and based on Apache
+Pekko Streams.
 
-Version **0.1.1** is a hardened/refactored milestone. Its purpose is to make the
-existing single-rule TCP forwarder easier to understand, test and extend before
-larger features are introduced.
+Milestone **0.2.0** is the technology/runtime modernization release following
+the architectural cleanup performed in 0.1.1.
 
-## What the application does
+## Technology baseline
 
-The server accepts TCP connections on a local endpoint and forwards the byte
-stream to a configured target endpoint:
+- Scala 2.13.18
+- JDK 21
+- Apache Pekko 1.7.0
+- Pekko Streams
+- ScalaFX / JavaFX
+- ScalaTest
+- SLF4J + Logback
+- SBT
+
+## What changed in 0.2.0
+
+- Akka 2.8 was replaced by Apache Pekko 1.7.
+- Scala was upgraded from 2.13.16 to 2.13.18.
+- JDK 21 is now the project baseline.
+- forwarding lifecycle is represented by one coherent internal state object.
+- Pekko `CoordinatedShutdown` owns graceful runtime cleanup.
+- HOCON now mirrors the `listen` / `target` domain model.
+- CLI can print version and validate configuration without opening sockets.
+- typed application exceptions replace loosely structured config errors.
+- TCP integration tests now cover lifecycle, bind failure and large payloads.
+- scalafmt formatting checks are part of CI.
+- assembly artifacts include their application version.
+
+## Scope
+
+0.2.0 intentionally remains:
 
 ```text
-TCP client
-    |
-    v
-local listen endpoint
-    |
-    v
-Port Forward Server
-    |
-    v
-remote target endpoint
+single forwarding rule
+TCP only
+CLI + GUI
+HOCON config
 ```
 
-Akka Streams is used to handle the connection streams and propagate
-backpressure.
-
-> Important: plain TCP port forwarding is **not encryption** and is not a VPN or
-> SSH tunnel. Binding a listener to a public interface may expose the target
-> service. TLS/mTLS support is planned for a later milestone.
-
-## Milestone 0.1.1 goals
-
-This milestone intentionally focuses on code quality instead of feature growth:
-
-- SOLID/KISS/DRY/YAGNI-oriented package structure,
-- separation of domain, configuration, networking, application service and UI,
-- immutable domain objects,
-- explicit configuration validation,
-- structured logging instead of `println` in the networking layer,
-- shared runtime lifecycle for CLI and GUI,
-- idempotent forwarding shutdown,
-- unit and TCP end-to-end tests,
-- smaller dependency set,
-- GitHub Actions CI,
-- simplified non-root Docker runtime,
-- updated documentation and changelog.
-
-UDP, TLS/mTLS, multiple forwarding rules, metrics and management API are
-deliberately outside the scope of 0.1.1.
+UDP, TLS/mTLS, multiple rules, metrics, management API and load balancing are
+future features.
 
 ## Architecture
 
 ```text
                          +----------------------+
-                         | ForwardServerMainApp |
+                         | Main application     |
                          +----------+-----------+
                                     |
                      +--------------+--------------+
@@ -76,142 +70,140 @@ deliberately outside the scope of 0.1.1.
                               +-----------+
                               | Forwarder |
                               +-----+-----+
+                                    ^
                                     |
-                                    v
-                            +---------------+
+                            +-------+-------+
                             | TcpForwarder  |
                             +-------+-------+
                                     |
                                     v
                        +--------------------------+
-                       | TcpConnectionFlowFactory |
+                       | Apache Pekko Streams     |
                        +--------------------------+
 ```
 
-### Package structure
+See `docs/ARCHITECTURE.md` for details.
+
+## Why Apache Pekko
+
+The project uses Apache Pekko as the reactive runtime while keeping the
+`Forwarder` boundary independent of it. Pekko provides the ActorSystem and
+Streams/TCP APIs needed by this project without changing the conceptual
+forwarding architecture.
+
+Migration details are documented in:
 
 ```text
-io.codeswarm.portforward
-├── ForwardServerMainApplication.scala
-├── cli
-│   ├── CliCommand.scala
-│   ├── CommandLineParser.scala
-│   └── PortForwardCliApp.scala
-├── config
-│   ├── ConfigError.scala
-│   ├── ConfigLoader.scala
-│   └── HoconConfigLoader.scala
-├── domain
-│   ├── Endpoint.scala
-│   ├── ForwardingConfig.scala
-│   └── ForwardingStatus.scala
-├── gui
-│   └── PortForwardGuiApp.scala
-├── network
-│   ├── Forwarder.scala
-│   └── tcp
-│       ├── TcpConnectionFlowFactory.scala
-│       └── TcpForwarder.scala
-├── runtime
-│   └── ApplicationRuntime.scala
-├── service
-│   └── ForwardingService.scala
-└── validation
-    └── ConfigValidator.scala
-```
-
-## Design principles applied
-
-### Single Responsibility Principle
-
-Each component has one primary reason to change:
-
-- `Endpoint` / `ForwardingConfig` represent domain data.
-- `ConfigValidator` validates domain rules.
-- `HoconConfigLoader` translates HOCON to domain objects.
-- `TcpConnectionFlowFactory` creates per-connection stream flows.
-- `TcpForwarder` owns listener lifecycle.
-- `ForwardingService` coordinates validation and transport.
-- CLI and GUI contain presentation logic only.
-
-### Dependency Inversion Principle
-
-`ForwardingService` depends on the `Forwarder` trait rather than directly on
-Akka TCP. This allows tests to use a lightweight stub and makes a future Pekko
-migration easier.
-
-### KISS and YAGNI
-
-0.1.1 keeps one TCP forwarding rule. It does not add abstractions for UDP, TLS,
-load balancing, multiple targets or observability until those features are
-actually introduced.
-
-## Requirements
-
-For local development:
-
-- JDK 17,
-- SBT 1.10.7.
-
-The code remains on Scala 2.13.16 and Akka 2.8.8 in this milestone. Migration
-to Apache Pekko and a Scala/JDK modernization are planned for milestone 0.2.0.
-
-## Build
-
-```bash
-sbt clean test
-sbt assembly
-```
-
-The fat JAR is created as:
-
-```text
-target/scala-2.13/port-forward-server.jar
+docs/MIGRATION_AKKA_TO_PEKKO.md
 ```
 
 ## Configuration
 
-Default `application.conf`:
+0.2.0 uses the nested schema:
 
 ```hocon
 port-forward {
-  local-host = "127.0.0.1"
-  local-port = 8090
-  remote-host = "example.com"
-  remote-port = 80
+  listen {
+    host = "127.0.0.1"
+    port = 8090
+  }
+
+  target {
+    host = "example.com"
+    port = 80
+  }
 }
 ```
 
-Valid TCP ports are `1..65535`. Host values must not be blank.
+The old 0.1.x flat keys are intentionally not retained because the project is
+still pre-1.0.
 
-## CLI usage
+Validation rules:
 
-Use the bundled configuration:
+- host must not be blank,
+- port must be in `1..65535`,
+- DNS is not resolved during validation.
+
+## Build
+
+Requirements:
+
+- JDK 21
+- SBT 1.12.9
+
+Format:
 
 ```bash
-java -jar target/scala-2.13/port-forward-server.jar --cli
+sbt scalafmtAll scalafmtSbt
 ```
 
-Use a custom HOCON file:
+Verify formatting:
 
 ```bash
-java -jar target/scala-2.13/port-forward-server.jar --cli ./application.conf
+sbt scalafmtCheckAll scalafmtSbtCheck
 ```
 
-Pass endpoints directly:
+Compile and test:
 
 ```bash
-java -jar target/scala-2.13/port-forward-server.jar \
+sbt clean test
+```
+
+Create the fat JAR:
+
+```bash
+sbt assembly
+```
+
+Artifact:
+
+```text
+target/scala-2.13/port-forward-server-0.2.0.jar
+```
+
+## CLI
+
+Start using bundled `application.conf`:
+
+```bash
+java -jar target/scala-2.13/port-forward-server-0.2.0.jar --cli
+```
+
+Use an external config:
+
+```bash
+java -jar target/scala-2.13/port-forward-server-0.2.0.jar \
+  --cli ./application.conf
+```
+
+Use direct endpoints:
+
+```bash
+java -jar target/scala-2.13/port-forward-server-0.2.0.jar \
   --cli 127.0.0.1 8090 example.com 80
 ```
 
-Display help:
+Validate bundled config without binding a port:
 
 ```bash
-java -jar target/scala-2.13/port-forward-server.jar --cli --help
+java -jar target/scala-2.13/port-forward-server-0.2.0.jar \
+  --cli --validate
 ```
 
-Stop an interactive CLI instance by typing:
+Validate external config:
+
+```bash
+java -jar target/scala-2.13/port-forward-server-0.2.0.jar \
+  --cli --validate ./application.conf
+```
+
+Version:
+
+```bash
+java -jar target/scala-2.13/port-forward-server-0.2.0.jar --version
+```
+
+Stop an interactive CLI session by typing:
 
 ```text
 quit
@@ -219,16 +211,16 @@ quit
 
 `exit` and `stop` are also accepted.
 
-## GUI usage
+## GUI
 
 ```bash
-java -jar target/scala-2.13/port-forward-server.jar --gui
+java -jar target/scala-2.13/port-forward-server-0.2.0.jar --gui
 ```
 
-Launching the JAR with no mode selector also opens the GUI.
+No mode flag also selects the GUI.
 
-The GUI uses the same `ForwardingService` and networking implementation as the
-CLI.
+The GUI contains presentation logic only. It delegates forwarding to the same
+`ForwardingService` used by CLI.
 
 ## Docker
 
@@ -238,23 +230,22 @@ Build the JAR first:
 sbt assembly
 ```
 
-Then build the image:
+Build the image:
 
 ```bash
-docker build -t port-forward:0.1.1 .
+docker build -t port-forward:0.2.0 .
 ```
 
-Run the CLI container:
+Run:
 
 ```bash
 docker run --rm \
   -p 8090:8090 \
-  port-forward:0.1.1
+  port-forward:0.2.0
 ```
 
-The Docker image intentionally contains only the server/CLI runtime. GUI/X11
-dependencies and Xvfb were removed from the container because a server
-container should not emulate a desktop session.
+The container runs CLI/server mode as a non-root user. It intentionally contains
+no X11/Xvfb desktop emulation.
 
 ## Tests
 
@@ -264,51 +255,104 @@ Run:
 sbt test
 ```
 
-The test suite covers:
+Coverage includes:
 
+- endpoint rendering,
 - configuration validation,
-- command-line parsing,
-- default HOCON loading,
-- application-service behavior via a stub transport,
-- TCP end-to-end forwarding through a local echo server.
+- nested HOCON loading,
+- CLI parsing,
+- service behavior via a stub transport,
+- real TCP bidirectional forwarding,
+- start/stop lifecycle,
+- idempotent stop,
+- duplicate start rejection,
+- listener bind failure,
+- recovery to `Stopped` after failed bind,
+- large-payload byte integrity.
 
-## Security notes
+## Shutdown behavior
 
-- Do not bind to `0.0.0.0` unless the forwarding listener is intentionally
-  reachable from other hosts.
-- 0.1.1 does not provide encryption, authentication, source allowlists or rate
-  limiting.
-- Use operating-system firewall rules when exposing a listener outside the
-  local host.
-- TLS/mTLS and access control belong to later milestones.
+Pekko `CoordinatedShutdown` is used for runtime cleanup. The TCP listener is
+unbound in `PhaseServiceUnbind`.
+
+In milestone 0.2.0, stopping means:
+
+```text
+stop accepting new connections
+```
+
+Existing client streams may complete naturally. Explicit drain/force policies
+are intentionally deferred.
+
+## Security
+
+Plain TCP forwarding does not provide encryption, authentication or VPN
+semantics.
+
+Do not expose the listener on `0.0.0.0` unless that is intentional and protected
+by appropriate network/firewall rules.
+
+0.2.0 does not yet provide:
+
+- TLS/mTLS,
+- source allowlists,
+- rate limiting,
+- connection limits.
+
+## Design principles
+
+The implementation follows:
+
+- SOLID,
+- KISS,
+- DRY,
+- YAGNI,
+- immutable domain data,
+- dependency inversion between service and transport,
+- single responsibility between config/validation/network/runtime/UI.
+
+No abstraction for a future feature is introduced until the project has an
+actual use for it.
 
 ## Roadmap
 
-### 0.1.1 — current
+### 0.2.0 — current
 
-Code-quality hardening and architectural refactor.
+Pekko migration and runtime hardening.
 
-### 0.2.0
+### 0.2.1
 
-Planned technology modernization:
+Proposed next scope:
 
-- Akka -> Apache Pekko,
-- dependency refresh,
-- Scala 2.13 patch update,
-- JDK baseline review.
+- connect timeout,
+- idle timeout,
+- connection limit,
+- active connection tracking,
+- stronger graceful shutdown/draining,
+- additional failure-path tests.
 
-### Later milestones
+### 0.3.0
 
-Potential features:
+Proposed:
 
 - multiple forwarding rules,
-- UDP,
-- IPv6 hardening,
-- TLS/mTLS,
-- timeouts and connection limits,
-- Prometheus/OpenTelemetry observability,
-- management API,
-- configuration hot reload,
-- target health checks and load balancing.
+- rule registry/lifecycle.
 
-See [CHANGELOG.md](CHANGELOG.md).
+### 0.3.1+
+
+Candidates:
+
+- UDP,
+- stronger IPv6 coverage,
+- TLS/mTLS,
+- management API,
+- Prometheus/OpenTelemetry,
+- hot reload,
+- load balancing and backend health checks.
+
+## Documentation
+
+- `docs/ARCHITECTURE.md`
+- `docs/MIGRATION_AKKA_TO_PEKKO.md`
+- `docs/MILESTONE_0.2.0_TASKS.md`
+- `CHANGELOG.md`
