@@ -1,21 +1,19 @@
 package io.codeswarm.portforward.config
 
 import io.codeswarm.portforward.domain.ForwardingConfig
+import io.codeswarm.portforward.error.PortForwardException
 
 /**
- * Abstraction for loading forwarding configuration.
- *
- * Keeping the loader behind a trait prevents the CLI and GUI from depending
- * directly on Typesafe Config and makes configuration behavior easy to test.
+ * Abstraction for loading one forwarding configuration.
  */
 trait ConfigLoader {
 
   /**
-   * Loads one forwarding rule.
+   * Loads and validates forwarding configuration.
    *
-   * @param path optional filesystem path. When absent, the application
-   *             classpath `application.conf` is used.
-   * @return either a descriptive configuration error or valid configuration.
+   * @param path optional filesystem path. `None` selects classpath
+   *             `application.conf`.
+   * @return valid forwarding configuration or a typed application error.
    */
-  def load(path: Option[String]): Either[ConfigError, ForwardingConfig]
+  def load(path: Option[String]): Either[PortForwardException, ForwardingConfig]
 }

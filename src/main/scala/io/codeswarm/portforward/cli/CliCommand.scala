@@ -3,30 +3,43 @@ package io.codeswarm.portforward.cli
 import io.codeswarm.portforward.domain.ForwardingConfig
 
 /**
- * Algebra of commands accepted by the CLI parser.
+ * Closed set of supported CLI commands.
  */
 sealed trait CliCommand
 
 /**
- * Companion object containing all CLI commands.
+ * CLI command definitions.
  */
 object CliCommand {
 
   /**
-   * Starts forwarding with an explicitly supplied configuration.
+   * Starts forwarding with explicit endpoints.
    *
    * @param config forwarding rule.
    */
   final case class Start(config: ForwardingConfig) extends CliCommand
 
   /**
-   * Starts forwarding from a HOCON configuration source.
+   * Starts forwarding from HOCON.
    *
-   * @param configPath optional configuration path; `None` means classpath
-   *                   `application.conf`.
+   * @param configPath optional file path; `None` selects the bundled config.
    */
-  final case class StartFromConfig(configPath: Option[String]) extends CliCommand
+  final case class StartFromConfig(
+      configPath: Option[String]
+  ) extends CliCommand
 
-  /** Requests command-line help. */
+  /**
+   * Validates configuration without opening a TCP listener.
+   *
+   * @param configPath optional file path; `None` selects the bundled config.
+   */
+  final case class ValidateConfig(
+      configPath: Option[String]
+  ) extends CliCommand
+
+  /** Displays command-line help. */
   case object Help extends CliCommand
+
+  /** Displays application version. */
+  case object Version extends CliCommand
 }

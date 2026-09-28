@@ -3,12 +3,12 @@ package io.codeswarm.portforward.domain
 /**
  * Immutable configuration of one TCP forwarding rule.
  *
- * Milestone 0.1.1 deliberately keeps the domain model limited to a single
- * TCP rule. Multiple rules, UDP and TLS are intentionally deferred to later
- * milestones to keep this refactor focused and easy to reason about.
+ * Milestone 0.2.0 intentionally remains single-rule and TCP-only. Features
+ * such as UDP, TLS and multiple rules are deferred to later milestones to keep
+ * this release focused on the Pekko migration and runtime hardening.
  *
- * @param listen endpoint on which the application accepts client connections.
- * @param target endpoint to which accepted TCP traffic is forwarded.
+ * @param listen endpoint on which clients connect.
+ * @param target endpoint receiving forwarded TCP traffic.
  */
 final case class ForwardingConfig(
     listen: Endpoint,

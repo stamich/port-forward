@@ -1,24 +1,24 @@
 package io.codeswarm.portforward.domain
 
 /**
- * Describes the lifecycle state of the forwarding service.
+ * Public lifecycle state of the forwarding service.
  */
 sealed trait ForwardingStatus
 
 /**
- * Companion object containing all supported forwarding lifecycle states.
+ * Supported forwarding lifecycle states.
  */
 object ForwardingStatus {
 
-  /** The service has not been started or has already been stopped. */
+  /** The listener is not active. */
   case object Stopped extends ForwardingStatus
 
-  /** The service is starting and waiting for the TCP listener to bind. */
+  /** The listener is currently being bound. */
   case object Starting extends ForwardingStatus
 
-  /** The TCP listener is bound and can accept client connections. */
+  /** The listener is active and accepts client connections. */
   case object Running extends ForwardingStatus
 
-  /** The service is unbinding the TCP listener. */
+  /** The listener is currently being unbound. */
   case object Stopping extends ForwardingStatus
 }

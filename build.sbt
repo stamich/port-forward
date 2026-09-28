@@ -1,50 +1,55 @@
-ThisBuild / organization := "io.codeswarm"
-ThisBuild / version := "0.1.1"
-ThisBuild / scalaVersion := "2.13.16"
+import Dependencies._
 
-lazy val akkaVersion = "2.8.8"
-lazy val scalaFxVersion = "22.0.0-R33"
-lazy val scalaTestVersion = "3.2.19"
-lazy val logbackVersion = "1.5.18"
+ThisBuild / organization := "io.codeswarm"
+ThisBuild / version := "0.2.0"
+ThisBuild / scalaVersion := "2.13.18"
+
+lazy val javaFxClassifier: String =
+  System.getProperty("os.name") match {
+    case name if name.startsWith("Linux")   => "linux"
+    case name if name.startsWith("Mac")     => "mac"
+    case name if name.startsWith("Windows") => "win"
+    case other                              => sys.error(s"Unsupported operating system: $other")
+  }
 
 lazy val root = (project in file("."))
   .settings(
     name := "scala-port-forward",
-    Compile / mainClass := Some("io.codeswarm.portforward.ForwardServerMainApplication"),
-    Compile / packageBin / mainClass := Some("io.codeswarm.portforward.ForwardServerMainApplication"),
+
+    Compile / mainClass :=
+      Some("io.codeswarm.portforward.ForwardServerMainApplication"),
+
+    Compile / packageBin / mainClass :=
+      Some("io.codeswarm.portforward.ForwardServerMainApplication"),
 
     scalacOptions ++= Seq(
       "-deprecation",
       "-feature",
       "-unchecked",
-      "-Xlint"
+      "-Xlint",
+      "-Wvalue-discard"
     ),
 
-    libraryDependencies ++= {
-      val osName = System.getProperty("os.name") match {
-        case n if n.startsWith("Linux")   => "linux"
-        case n if n.startsWith("Mac")     => "mac"
-        case n if n.startsWith("Windows") => "win"
-        case other                        => sys.error(s"Unsupported operating system: $other")
-      }
-
+    libraryDependencies ++=
       Seq(
-        "com.typesafe.akka" %% "akka-actor" % akkaVersion,
-        "com.typesafe.akka" %% "akka-stream" % akkaVersion,
-        "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
-        "ch.qos.logback" % "logback-classic" % logbackVersion,
-        "org.scalafx" %% "scalafx" % scalaFxVersion,
-        "org.scalatest" %% "scalatest" % scalaTestVersion % Test
-      ) ++
-        Seq("base", "controls", "graphics")
-          .map(module => "org.openjfx" % s"javafx-$module" % "22" classifier osName)
-    },
+        pekkoActor,
+        pekkoStream,
+        pekkoSlf4j,
+        logbackClassic,
+        scalaFx,
+        scalaTest
+      ) ++ javaFx(javaFxClassifier),
 
     Test / parallelExecution := false,
 
-    assembly / mainClass := Some("io.codeswarm.portforward.ForwardServerMainApplication"),
-    assembly / assemblyJarName := "port-forward-server.jar",
+    assembly / mainClass :=
+      Some("io.codeswarm.portforward.ForwardServerMainApplication"),
+
+    assembly / assemblyJarName :=
+      s"port-forward-server-${version.value}.jar",
+
     assembly / test := (Test / test).value,
+
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
       case PathList("META-INF", _ @ _*)         => MergeStrategy.discard

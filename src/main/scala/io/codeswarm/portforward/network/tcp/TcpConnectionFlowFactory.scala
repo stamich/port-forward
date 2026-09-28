@@ -1,26 +1,26 @@
 package io.codeswarm.portforward.network.tcp
 
-import akka.NotUsed
-import akka.actor.ActorSystem
-import akka.stream.scaladsl.{Flow, Tcp}
-import akka.util.ByteString
 import io.codeswarm.portforward.domain.Endpoint
+import org.apache.pekko.NotUsed
+import org.apache.pekko.actor.ActorSystem
+import org.apache.pekko.stream.scaladsl.{Flow, Tcp}
+import org.apache.pekko.util.ByteString
 
 /**
- * Creates the stream used for one accepted client connection.
+ * Creates one target-side Pekko Streams flow for each accepted TCP client.
  *
- * Akka Streams propagates backpressure in both directions, avoiding the need
- * for an unbounded user-space buffer.
+ * Pekko Streams propagates backpressure between both sockets, which avoids an
+ * unbounded application-level byte buffer.
  *
- * @param actorSystem Akka actor system used by the TCP extension.
+ * @param actorSystem Pekko actor system used by the TCP extension.
  */
 final class TcpConnectionFlowFactory(implicit actorSystem: ActorSystem) {
 
   /**
-   * Creates a flow connecting client bytes with the configured target.
+   * Creates a byte flow connected to the configured target endpoint.
    *
-   * @param target destination endpoint.
-   * @return flow that forwards bytes to and from the target.
+   * @param target remote destination.
+   * @return flow forwarding bytes to and from the target.
    */
   def create(target: Endpoint): Flow[ByteString, ByteString, NotUsed] =
     Tcp()

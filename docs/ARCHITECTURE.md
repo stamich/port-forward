@@ -1,129 +1,194 @@
-# Architecture — milestone 0.1.1
+# Architecture — milestone 0.2.0
 
 ## Purpose
 
-Milestone 0.1.1 is a structural hardening release. The forwarding behavior
-remains deliberately small: one TCP listener forwards byte streams to one TCP
-target.
+Milestone 0.2.0 migrates the networking runtime from Akka to Apache Pekko,
+upgrades the Scala/JDK baseline and hardens lifecycle behavior while preserving
+the intentionally small feature scope of one TCP rule.
 
-## Layers
-
-### Domain
-
-`Endpoint`, `ForwardingConfig` and `ForwardingStatus` contain no Akka, JavaFX or
-Typesafe Config dependencies.
-
-### Configuration
-
-`ConfigLoader` defines the boundary. `HoconConfigLoader` is the concrete
-Typesafe Config adapter.
-
-### Validation
-
-`ConfigValidator` owns domain validation. The same rules are therefore applied
-regardless of whether configuration came from CLI, HOCON or GUI.
-
-### Application service
-
-`ForwardingService` coordinates validation and the forwarding transport.
-
-### Network
-
-`Forwarder` is the transport contract.
-
-`TcpForwarder` owns TCP listener lifecycle.
-
-`TcpConnectionFlowFactory` creates one Akka stream for each accepted client
-connection and connects it to the target with `Tcp().outgoingConnection`.
-
-### Runtime
-
-`ApplicationRuntime` creates the ActorSystem, materializer, TCP implementation
-and application service. It also centralizes shutdown.
-
-### Presentation
-
-`PortForwardCliApp` and `PortForwardGuiApp` are adapters. Neither implements
-TCP forwarding.
-
-## Dependency direction
+## Dependency boundaries
 
 ```text
-presentation
-    |
-    v
-application service
-    |
-    v
-Forwarder abstraction
-    ^
-    |
-TCP implementation
-
-configuration --> domain <-- validation
++-------------------------+
+| CLI / ScalaFX GUI       |
++------------+------------+
+             |
+             v
++-------------------------+
+| ForwardingService       |
++------------+------------+
+             |
+             v
++-------------------------+
+| Forwarder abstraction   |
++------------+------------+
+             ^
+             |
++------------+------------+
+| TcpForwarder            |
+| TcpConnectionFlowFactory|
++------------+------------+
+             |
+             v
++-------------------------+
+| Apache Pekko Streams    |
++-------------------------+
 ```
 
-The domain layer is intentionally dependency-light.
+The domain, validation and application service layers do not import Pekko.
 
-## SOLID mapping
-
-- **S**: networking, configuration, validation and presentation are separated.
-- **O**: future transports can implement `Forwarder`.
-- **L**: callers use the `Forwarder` lifecycle contract independent of the
-  implementation.
-- **I**: the forwarding interface contains only start/stop/status behavior.
-- **D**: `ForwardingService` depends on `Forwarder`, not `TcpForwarder`.
-
-## KISS / DRY / YAGNI
-
-The milestone does not introduce multi-rule registries, protocol hierarchies,
-TLS abstractions or observability interfaces that would not yet be used.
-
-Shared validation and runtime construction remove duplication that previously
-existed between CLI and GUI paths.
-
-## Lifecycle
+## Packages
 
 ```text
-Stopped
-  |
-  | start
-  v
-Starting
-  |
-  | bind success
-  v
-Running
-  |
-  | stop
-  v
-Stopping
-  |
-  | unbind complete
-  v
-Stopped
+io.codeswarm.portforward
+├── ForwardServerMainApplication.scala
+├── Version.scala
+├── cli/
+├── config/
+├── domain/
+├── error/
+├── gui/
+├── network/
+│   └── tcp/
+├── runtime/
+├── service/
+└── validation/
 ```
 
-A failed bind returns the state to `Stopped`.
+## Lifecycle state model
 
-## Backpressure
+`TcpForwarder` stores one internal state value:
 
-No application-level unbounded byte buffer is introduced. Akka Streams
-propagates demand between the accepted socket and the outgoing target
-connection.
+```text
+Idle
+ |
+ | start
+ v
+Binding(config)
+ |
+ | bind success
+ v
+Bound(config, ServerBinding)
+ |
+ | stop
+ v
+Unbinding(config)
+ |
+ | unbind success
+ v
+Idle
+```
 
-## Deferred concerns
+The public mapping is:
 
-The following are explicitly deferred:
+```text
+Idle       -> Stopped
+Binding    -> Starting
+Bound      -> Running
+Unbinding  -> Stopping
+```
 
-- UDP,
-- TLS/mTLS,
-- multiple rules,
-- source ACL,
-- connection limits,
-- observability metrics,
-- management HTTP API,
-- hot reload,
-- load balancing.
+This is intentionally preferable to separate `status` and `binding` mutable
+references because invalid combinations cannot be represented.
 
-Deferring these keeps 0.1.1 focused and makes later changes easier to review.
+## Shutdown
+
+Pekko `CoordinatedShutdown` owns process cleanup.
+
+The runtime registers `ForwardingService.stop()` in
+`PhaseServiceUnbind`. Explicit shutdown and JVM/process shutdown therefore use
+the same cleanup path.
+
+`stop()` unbinds the listener, preventing new connections. Existing connection
+streams are allowed to finish naturally in 0.2.0. Drain/force semantics remain
+future work.
+
+## TCP stream
+
+For every accepted client:
+
+```text
+client socket
+    |
+    v
+IncomingConnection
+    |
+    v
+TcpConnectionFlowFactory
+    |
+    v
+Tcp().outgoingConnection(target)
+    |
+    v
+target socket
+```
+
+Pekko Streams propagates backpressure. The application does not add an
+unbounded byte buffer.
+
+## Configuration boundary
+
+The HOCON structure now mirrors the domain model:
+
+```hocon
+port-forward {
+  listen {
+    host = "127.0.0.1"
+    port = 8090
+  }
+
+  target {
+    host = "example.com"
+    port = 80
+  }
+}
+```
+
+The old flat `local-host` / `remote-host` schema is intentionally removed
+before 1.0.
+
+## Error model
+
+Expected application failures extend `PortForwardException`:
+
+- `ConfigurationLoadException`
+- `InvalidConfigurationException`
+- `ForwarderStateException`
+- `BindFailedException`
+
+The asynchronous transport API remains `Future[Done]`; `Future[Either[...]]`
+would add unnecessary nesting at the current scale.
+
+## Design principles
+
+### SOLID
+
+- SRP: config, validation, service, runtime and TCP behavior are separated.
+- OCP: a future transport can implement `Forwarder`.
+- LSP: service callers use the same lifecycle contract for every implementation.
+- ISP: `Forwarder` exposes only start/stop/status.
+- DIP: `ForwardingService` depends on `Forwarder`, not `TcpForwarder`.
+
+### KISS / YAGNI
+
+0.2.0 does not add UDP, TLS, multiple forwarding rules, metrics, REST API,
+circuit breakers or load balancing.
+
+### DRY
+
+CLI, GUI and HOCON share the same domain model, validator and service layer.
+
+## Technology baseline
+
+- Scala 2.13.18
+- JDK 21
+- Apache Pekko 1.7.0
+- ScalaFX / JavaFX
+- ScalaTest
+- SLF4J + Logback
+
+## Next architectural step
+
+The next milestone should focus on runtime behavior such as timeouts,
+connection limits and stronger graceful shutdown before introducing protocol
+or management-plane expansion.
