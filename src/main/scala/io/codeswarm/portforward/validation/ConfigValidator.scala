@@ -3,8 +3,7 @@ package io.codeswarm.portforward.validation
 import io.codeswarm.portforward.domain.{Endpoint, ForwardingConfig}
 
 /**
- * Validates user-provided forwarding configuration before networking resources
- * are allocated.
+ * Stateless domain validator shared by all configuration entry points.
  */
 object ConfigValidator {
 
@@ -12,18 +11,22 @@ object ConfigValidator {
   private val MaximumPort = 65535
 
   /**
-   * Validates a complete forwarding configuration.
+   * Validates one forwarding rule.
+   *
+   * DNS resolution is deliberately not performed here. A host name can be
+   * syntactically valid even when DNS is temporarily unavailable.
    *
    * @param config configuration to validate.
-   * @return `Right(config)` when valid, otherwise `Left` containing all
-   *         validation messages.
+   * @return `Right(config)` when valid, otherwise every discovered error.
    */
-  def validate(config: ForwardingConfig): Either[List[String], ForwardingConfig] = {
+  def validate(
+      config: ForwardingConfig
+  ): Either[List[String], ForwardingConfig] = {
     val errors =
       validateEndpoint("listen", config.listen) ++
         validateEndpoint("target", config.target)
 
-    if (errors.isEmpty) Right(config) else Left(errors)
+    Either.cond(errors.isEmpty, config, errors)
   }
 
   /**
@@ -31,16 +34,22 @@ object ConfigValidator {
    *
    * @param name logical endpoint name used in validation messages.
    * @param endpoint endpoint to validate.
-   * @return zero or more validation errors.
+   * @return zero or more validation messages.
    */
-  private def validateEndpoint(name: String, endpoint: Endpoint): List[String] = {
+  private def validateEndpoint(
+      name: String,
+      endpoint: Endpoint
+  ): List[String] = {
     val hostErrors =
-      if (endpoint.host.trim.isEmpty) List(s"$name host must not be empty")
-      else Nil
+      Option(endpoint.host)
+        .filter(_.trim.nonEmpty)
+        .fold(List(s"$name host must not be empty"))(_ => Nil)
 
     val portErrors =
       if (endpoint.port < MinimumPort || endpoint.port > MaximumPort)
-        List(s"$name port must be between $MinimumPort and $MaximumPort")
+        List(
+          s"$name port must be between $MinimumPort and $MaximumPort"
+        )
       else Nil
 
     hostErrors ++ portErrors

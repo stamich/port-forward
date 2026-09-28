@@ -1,59 +1,105 @@
 package io.codeswarm.portforward.runtime
 
-import akka.actor.ActorSystem
-import akka.stream.{Materializer, SystemMaterializer}
 import io.codeswarm.portforward.network.tcp.{TcpConnectionFlowFactory, TcpForwarder}
 import io.codeswarm.portforward.service.ForwardingService
+import org.apache.pekko.Done
+import org.apache.pekko.actor.{ActorSystem, CoordinatedShutdown}
+import org.apache.pekko.stream.{Materializer, SystemMaterializer}
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
- * Owns infrastructure resources shared by CLI and GUI front ends.
+ * Owns Apache Pekko infrastructure shared by CLI and GUI front ends.
  *
- * Centralizing ActorSystem creation avoids duplicated lifecycle code and keeps
- * presentation classes focused on user interaction.
+ * The runtime registers forwarding cleanup with `CoordinatedShutdown`, so
+ * SIGTERM/JVM shutdown and explicit application shutdown follow the same
+ * lifecycle path.
  *
- * @param actorSystem Akka actor system owned by this runtime.
+ * @param actorSystem Pekko ActorSystem owned by this runtime.
+ * @param forwardingService application forwarding service.
  */
 final class ApplicationRuntime private (
     val actorSystem: ActorSystem,
     val forwardingService: ForwardingService
 ) {
 
-  private implicit val executionContext: ExecutionContext = actorSystem.dispatcher
+  private val logger: Logger =
+    LoggerFactory.getLogger(classOf[ApplicationRuntime])
+
+  private implicit val executionContext: ExecutionContext =
+    actorSystem.dispatcher
 
   /**
-   * Stops forwarding and then terminates the actor system.
+   * Runs Pekko coordinated shutdown.
    *
-   * @return future completed when runtime resources are terminated.
+   * @return future completed after all registered shutdown phases finish.
    */
-  def shutdown(): Future[Unit] =
-    forwardingService
-      .stop()
-      .recover { case _ => akka.Done }
-      .flatMap(_ => actorSystem.terminate())
-      .map(_ => ())
+  def shutdown(): Future[Done] = {
+    logger.info("Starting coordinated application shutdown")
+    CoordinatedShutdown(actorSystem)
+      .run(CoordinatedShutdown.UnknownReason)
+  }
 }
 
 /**
- * Factory for fully wired application runtimes.
+ * Production runtime factory.
  */
 object ApplicationRuntime {
 
   /**
-   * Creates the production runtime used by CLI and GUI applications.
+   * Creates and wires the production runtime.
    *
-   * @return initialized runtime; the TCP listener is not started yet.
+   * @return initialized runtime; no listener is started yet.
    */
   def create(): ApplicationRuntime = {
-    implicit val actorSystem: ActorSystem = ActorSystem("port-forward-system")
-    implicit val materializer: Materializer = SystemMaterializer(actorSystem).materializer
-    implicit val executionContext: ExecutionContext = actorSystem.dispatcher
+    implicit val actorSystem: ActorSystem =
+      ActorSystem("port-forward-system")
 
-    val flowFactory = new TcpConnectionFlowFactory()
-    val forwarder = new TcpForwarder(flowFactory)
-    val service = new ForwardingService(forwarder)
+    implicit val materializer: Materializer =
+      SystemMaterializer(actorSystem).materializer
 
-    new ApplicationRuntime(actorSystem, service)
+    implicit val executionContext: ExecutionContext =
+      actorSystem.dispatcher
+
+    val flowFactory =
+      new TcpConnectionFlowFactory()
+
+    val forwarder =
+      new TcpForwarder(flowFactory)
+
+    val forwardingService =
+      new ForwardingService(forwarder)
+
+    val runtime =
+      new ApplicationRuntime(
+        actorSystem,
+        forwardingService
+      )
+
+    registerShutdown(forwardingService)
+
+    runtime
+  }
+
+  /**
+   * Registers listener cleanup in Pekko's service-unbind shutdown phase.
+   *
+   * @param forwardingService service whose listener should be stopped.
+   * @param actorSystem runtime actor system.
+   * @param executionContext runtime execution context.
+   */
+  private def registerShutdown(
+      forwardingService: ForwardingService
+  )(
+      implicit actorSystem: ActorSystem,
+      executionContext: ExecutionContext
+  ): Unit = {
+    CoordinatedShutdown(actorSystem).addTask(
+      CoordinatedShutdown.PhaseServiceUnbind,
+      "port-forward-unbind"
+    ) { () =>
+      forwardingService.stop().recover { case _ => Done }
+    }
   }
 }
