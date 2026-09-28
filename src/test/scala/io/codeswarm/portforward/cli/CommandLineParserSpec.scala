@@ -1,47 +1,46 @@
 package io.codeswarm.portforward.cli
 
-import io.codeswarm.portforward.model.ForwardingConfig
-import org.scalatest.flatspec.AnyFlatSpec
+import io.codeswarm.portforward.cli.CliCommand.{Help, Start, StartFromConfig}
+import io.codeswarm.portforward.domain.{Endpoint, ForwardingConfig}
+import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 
-class CommandLineParserSpec extends AnyFlatSpec with Matchers {
+/**
+ * Tests the pure command-line parser.
+ */
+final class CommandLineParserSpec extends AnyFunSuite with Matchers {
 
-  "CommandLineParser" should "parse valid arguments correctly" in {
-    val args = Array("localhost", "8080", "example.com", "80")
-    val config = CommandLineParser.parse(args)
-
-    config shouldBe defined
-    config.get shouldEqual ForwardingConfig(
-      localHost = "localhost",
-      localPort = 8080,
-      remoteHost = "example.com",
-      remotePort = 80
-    )
+  /** Verifies the default configuration form. */
+  test("parse uses classpath configuration for empty arguments") {
+    CommandLineParser.parse(Array.empty) shouldBe Right(StartFromConfig(None))
   }
 
-  it should "return None for insufficient arguments" in {
-    val args = Array("localhost", "8080", "example.com")
-    val config = CommandLineParser.parse(args)
-
-    config shouldBe None
+  /** Verifies explicit configuration file support. */
+  test("parse accepts one configuration file path") {
+    CommandLineParser.parse(Array("custom.conf")) shouldBe
+      Right(StartFromConfig(Some("custom.conf")))
   }
 
-  it should "return None for invalid port number" in {
-    val args = Array("localhost", "invalid", "example.com", "80")
-    val config = CommandLineParser.parse(args)
-
-    config shouldBe None
+  /** Verifies the direct four-argument forwarding form. */
+  test("parse accepts direct endpoint arguments") {
+    CommandLineParser.parse(Array("127.0.0.1", "9000", "localhost", "8080")) shouldBe
+      Right(
+        Start(
+          ForwardingConfig(
+            Endpoint("127.0.0.1", 9000),
+            Endpoint("localhost", 8080)
+          )
+        )
+      )
   }
 
-  it should "return None for empty arguments" in {
-    val config = CommandLineParser.parse(Array.empty[String])
-
-    config shouldBe None
+  /** Verifies help parsing. */
+  test("parse recognizes help") {
+    CommandLineParser.parse(Array("--help")) shouldBe Right(Help)
   }
 
-  it should "return None for single argument" in {
-    val config = CommandLineParser.parse(Array("config.conf"))
-
-    config shouldBe None
+  /** Verifies malformed ports are rejected. */
+  test("parse rejects non-numeric ports") {
+    CommandLineParser.parse(Array("127.0.0.1", "bad", "localhost", "8080")).isLeft shouldBe true
   }
 }
