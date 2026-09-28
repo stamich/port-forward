@@ -2,30 +2,45 @@ package io.codeswarm.portforward.config
 
 import com.typesafe.config.{Config, ConfigException, ConfigFactory}
 import io.codeswarm.portforward.domain.{Endpoint, ForwardingConfig}
+import io.codeswarm.portforward.error.{ConfigurationLoadException, InvalidConfigurationException, PortForwardException}
 import io.codeswarm.portforward.validation.ConfigValidator
 
 import java.io.File
 import scala.util.control.NonFatal
 
 /**
- * Loads forwarding configuration from HOCON using Typesafe Config.
+ * Typesafe Config adapter loading the milestone 0.2 HOCON schema.
+ *
+ * The expected shape is:
+ *
+ * {{{
+ * port-forward {
+ *   listen { host = "127.0.0.1", port = 8090 }
+ *   target { host = "example.com", port = 80 }
+ * }
+ * }}}
  */
 final class HoconConfigLoader extends ConfigLoader {
 
   /**
-   * Loads configuration from the supplied file or from the application
-   * classpath when no explicit file was supplied.
+   * Loads and validates forwarding configuration.
    *
-   * @param path optional path to a HOCON configuration file.
-   * @return parsed and validated forwarding configuration.
+   * @param path optional external HOCON file path.
+   * @return parsed configuration or a typed failure.
    */
-  override def load(path: Option[String]): Either[ConfigError, ForwardingConfig] = {
+  override def load(
+      path: Option[String]
+  ): Either[PortForwardException, ForwardingConfig] =
     try {
       val rawConfig = path match {
         case Some(value) =>
           val file = new File(value)
           if (!file.isFile)
-            return Left(ConfigError(s"Configuration file does not exist: $value"))
+            return Left(
+              ConfigurationLoadException(
+                s"Configuration file does not exist: $value"
+              )
+            )
 
           ConfigFactory.parseFile(file).resolve()
 
@@ -33,52 +48,74 @@ final class HoconConfigLoader extends ConfigLoader {
           ConfigFactory.load().resolve()
       }
 
-      toDomain(rawConfig).flatMap(validate)
+      for {
+        config <- toDomain(rawConfig)
+        valid <- validate(config)
+      } yield valid
     } catch {
       case ex: ConfigException =>
-        Left(ConfigError(s"Invalid configuration: ${ex.getMessage}", Some(ex)))
+        Left(
+          ConfigurationLoadException(
+            s"Invalid configuration: ${ex.getMessage}",
+            ex
+          )
+        )
       case NonFatal(ex) =>
-        Left(ConfigError(s"Unable to load configuration: ${ex.getMessage}", Some(ex)))
+        Left(
+          ConfigurationLoadException(
+            s"Unable to load configuration: ${ex.getMessage}",
+            ex
+          )
+        )
     }
-  }
 
   /**
-   * Converts raw HOCON data into the domain model.
+   * Converts the raw HOCON representation into immutable domain objects.
    *
-   * @param config raw Typesafe configuration.
-   * @return domain forwarding configuration.
+   * @param config parsed Typesafe Config tree.
+   * @return domain forwarding configuration or a parsing failure.
    */
-  private def toDomain(config: Config): Either[ConfigError, ForwardingConfig] = {
+  private def toDomain(
+      config: Config
+  ): Either[PortForwardException, ForwardingConfig] =
     try {
       val forwarding = config.getConfig("port-forward")
+      val listen = forwarding.getConfig("listen")
+      val target = forwarding.getConfig("target")
 
       Right(
         ForwardingConfig(
           listen = Endpoint(
-            host = forwarding.getString("local-host"),
-            port = forwarding.getInt("local-port")
+            host = listen.getString("host"),
+            port = listen.getInt("port")
           ),
           target = Endpoint(
-            host = forwarding.getString("remote-host"),
-            port = forwarding.getInt("remote-port")
+            host = target.getString("host"),
+            port = target.getInt("port")
           )
         )
       )
     } catch {
       case ex: ConfigException =>
-        Left(ConfigError(s"Missing or invalid port-forward configuration: ${ex.getMessage}", Some(ex)))
+        Left(
+          ConfigurationLoadException(
+            s"Missing or invalid port-forward configuration: ${ex.getMessage}",
+            ex
+          )
+        )
     }
-  }
 
   /**
-   * Applies domain-level validation after parsing.
+   * Applies shared domain validation after parsing.
    *
-   * @param config parsed forwarding configuration.
-   * @return valid configuration or a combined validation message.
+   * @param config parsed configuration.
+   * @return validated configuration or a typed validation failure.
    */
-  private def validate(config: ForwardingConfig): Either[ConfigError, ForwardingConfig] =
+  private def validate(
+      config: ForwardingConfig
+  ): Either[PortForwardException, ForwardingConfig] =
     ConfigValidator
       .validate(config)
       .left
-      .map(errors => ConfigError(errors.mkString("; ")))
+      .map(InvalidConfigurationException.apply)
 }

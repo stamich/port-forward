@@ -1,24 +1,26 @@
 package io.codeswarm.portforward.service
 
-import akka.Done
 import io.codeswarm.portforward.domain.{ForwardingConfig, ForwardingStatus}
+import io.codeswarm.portforward.error.InvalidConfigurationException
 import io.codeswarm.portforward.network.Forwarder
 import io.codeswarm.portforward.validation.ConfigValidator
+import org.apache.pekko.Done
 
 import scala.concurrent.Future
 
 /**
- * Application service coordinating validation and transport lifecycle.
+ * Application service coordinating validation and forwarding lifecycle.
  *
- * @param forwarder transport implementation.
+ * @param forwarder transport implementation hidden behind the Forwarder
+ *                  abstraction.
  */
 final class ForwardingService(forwarder: Forwarder) {
 
   /**
-   * Validates and starts one forwarding rule.
+   * Validates and starts forwarding.
    *
-   * @param config rule requested by the caller.
-   * @return future completed when forwarding is active.
+   * @param config requested forwarding rule.
+   * @return future completed after the listener is active.
    */
   def start(config: ForwardingConfig): Future[Done] =
     ConfigValidator.validate(config) match {
@@ -26,21 +28,23 @@ final class ForwardingService(forwarder: Forwarder) {
         forwarder.start(validConfig)
 
       case Left(errors) =>
-        Future.failed(new IllegalArgumentException(errors.mkString("; ")))
+        Future.failed(
+          InvalidConfigurationException(errors)
+        )
     }
 
   /**
    * Stops forwarding.
    *
-   * @return future completed after the listener has been unbound.
+   * @return future completed after the listener is unbound.
    */
   def stop(): Future[Done] =
     forwarder.stop()
 
   /**
-   * Exposes the current forwarding state to presentation layers.
+   * Returns the current forwarding status.
    *
-   * @return current forwarding state.
+   * @return public lifecycle state.
    */
   def status: ForwardingStatus =
     forwarder.status
