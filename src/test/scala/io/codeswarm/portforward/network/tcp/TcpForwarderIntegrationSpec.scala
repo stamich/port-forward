@@ -1,7 +1,7 @@
 package io.codeswarm.portforward.network.tcp
 
 import akka.actor.ActorSystem
-import akka.stream.SystemMaterializer
+import akka.stream.{Materializer, SystemMaterializer}
 import akka.stream.scaladsl.{Sink, Source, Tcp}
 import akka.util.ByteString
 import io.codeswarm.portforward.domain.{Endpoint, ForwardingConfig}
@@ -24,7 +24,7 @@ final class TcpForwarderIntegrationSpec
     with BeforeAndAfterAll {
 
   private implicit val actorSystem: ActorSystem = ActorSystem("tcp-forwarder-test")
-  private implicit val materializer = SystemMaterializer(actorSystem).materializer
+  private implicit val materializer: Materializer = SystemMaterializer(actorSystem).materializer
   private implicit val executionContext: ExecutionContext = actorSystem.dispatcher
 
   /**

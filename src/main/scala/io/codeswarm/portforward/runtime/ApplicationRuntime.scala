@@ -1,7 +1,7 @@
 package io.codeswarm.portforward.runtime
 
 import akka.actor.ActorSystem
-import akka.stream.SystemMaterializer
+import akka.stream.{Materializer, SystemMaterializer}
 import io.codeswarm.portforward.network.tcp.{TcpConnectionFlowFactory, TcpForwarder}
 import io.codeswarm.portforward.service.ForwardingService
 
@@ -47,7 +47,7 @@ object ApplicationRuntime {
    */
   def create(): ApplicationRuntime = {
     implicit val actorSystem: ActorSystem = ActorSystem("port-forward-system")
-    implicit val materializer = SystemMaterializer(actorSystem).materializer
+    implicit val materializer: Materializer = SystemMaterializer(actorSystem).materializer
     implicit val executionContext: ExecutionContext = actorSystem.dispatcher
 
     val flowFactory = new TcpConnectionFlowFactory()
