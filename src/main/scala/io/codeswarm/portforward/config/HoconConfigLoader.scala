@@ -19,8 +19,16 @@ import scala.util.control.NonFatal
  *   target { host = "example.com", port = 80 }
  * }
  * }}}
+ *
+ * The default configuration is read explicitly from the application's
+ * `application.conf` resource instead of using `ConfigFactory.load()`. This
+ * keeps domain configuration loading independent from reference configuration
+ * contributed by Pekko and other libraries on the classpath.
  */
 final class HoconConfigLoader extends ConfigLoader {
+
+  /** Classpath resource containing the bundled default configuration. */
+  private val DefaultResource = "application.conf"
 
   /**
    * Loads and validates forwarding configuration.
@@ -34,24 +42,18 @@ final class HoconConfigLoader extends ConfigLoader {
     try {
       val rawConfig = path match {
         case Some(value) =>
-          val file = new File(value)
-          if (!file.isFile)
-            return Left(
-              ConfigurationLoadException(
-                s"Configuration file does not exist: $value"
-              )
-            )
-
-          ConfigFactory.parseFile(file).resolve()
+          loadFile(value)
 
         case None =>
-          ConfigFactory.load().resolve()
+          loadDefaultResource()
       }
 
-      for {
-        config <- toDomain(rawConfig)
-        valid <- validate(config)
-      } yield valid
+      rawConfig.flatMap { config =>
+        for {
+          domain <- toDomain(config)
+          valid <- validate(domain)
+        } yield valid
+      }
     } catch {
       case ex: ConfigException =>
         Left(
@@ -68,6 +70,54 @@ final class HoconConfigLoader extends ConfigLoader {
           )
         )
     }
+
+  /**
+   * Loads an explicitly supplied configuration file.
+   *
+   * @param value path to the HOCON file.
+   * @return parsed configuration or a typed loading error.
+   */
+  private def loadFile(
+      value: String
+  ): Either[PortForwardException, Config] = {
+    val file = new File(value)
+
+    if (!file.isFile)
+      Left(
+        ConfigurationLoadException(
+          s"Configuration file does not exist: $value"
+        )
+      )
+    else
+      Right(ConfigFactory.parseFile(file).resolve())
+  }
+
+  /**
+   * Loads the bundled application configuration directly from the classpath.
+   *
+   * Loading the application resource explicitly avoids merging unrelated
+   * `reference.conf` files supplied by dependencies. Those files belong to
+   * the runtime libraries and are not part of the port-forward domain schema.
+   *
+   * @return parsed default configuration or a typed loading error.
+   */
+  private def loadDefaultResource(): Either[PortForwardException, Config] = {
+    val classLoader = getClass.getClassLoader
+    val resource = classLoader.getResource(DefaultResource)
+
+    if (resource == null)
+      Left(
+        ConfigurationLoadException(
+          s"Classpath configuration resource not found: $DefaultResource"
+        )
+      )
+    else
+      Right(
+        ConfigFactory
+          .parseURL(resource)
+          .resolve()
+      )
+  }
 
   /**
    * Converts the raw HOCON representation into immutable domain objects.
