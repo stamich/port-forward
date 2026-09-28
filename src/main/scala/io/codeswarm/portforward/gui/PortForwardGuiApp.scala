@@ -1,143 +1,170 @@
 package io.codeswarm.portforward.gui
 
-import scalafx.application.JFXApp3
-import scalafx.application.Platform
-import scalafx.geometry.{Insets, Pos}
+import io.codeswarm.portforward.domain.{Endpoint, ForwardingConfig}
+import io.codeswarm.portforward.runtime.ApplicationRuntime
+import scalafx.application.{JFXApp3, Platform}
+import scalafx.geometry.Insets
 import scalafx.scene.Scene
-import scalafx.scene.control._
-import scalafx.scene.layout.{GridPane, HBox, VBox}
-import io.codeswarm.portforward.model.ForwardingConfig
-import io.codeswarm.portforward.server.PortForwardServer
-import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.CoordinatedShutdown
+import scalafx.scene.control.{Button, Label, TextField}
+import scalafx.scene.layout.{GridPane, VBox}
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success}
 
+/**
+ * Minimal ScalaFX front end for configuring one TCP forwarding rule.
+ *
+ * The GUI depends only on the application service exposed by
+ * [[ApplicationRuntime]]; it does not contain networking implementation logic.
+ */
 object PortForwardGuiApp extends JFXApp3 {
 
-  implicit val system: ActorSystem[Nothing] = ActorSystem(Behaviors.empty, "PortForwardSystem")
-  private var activeServer: Option[PortForwardServer] = None
+  private val runtime = ApplicationRuntime.create()
 
-  def start(): Unit = {
-    stage = new JFXApp3.PrimaryStage {
-      title = "Port Forwarding Tool"
-      scene = new Scene(600, 400) {
-        root = createMainUI()
-      }
-
-      onCloseRequest = _ => {
-        activeServer.foreach(server =>
-          server.stop().onComplete(_ => shutdownSystem())
-        )
-
-        if (activeServer.isEmpty) {
-          shutdownSystem()
-        }
-      }
-    }
-  }
-
-  private def shutdownSystem(): Unit = {
-    CoordinatedShutdown(system).run(CoordinatedShutdown.JvmExitReason)
-  }
-
-  private def createMainUI() = {
+  /**
+   * Creates and displays the primary JavaFX stage.
+   */
+  override def start(): Unit = {
     val localHostField = new TextField {
-      promptText = "Local Host"
-      text = "type your local host"
+      text = "127.0.0.1"
+      promptText = "Local host"
     }
+
     val localPortField = new TextField {
-      promptText = "Local Port"
-      text = "type your local port"
+      text = "8090"
+      promptText = "Local port"
     }
+
     val remoteHostField = new TextField {
-      promptText = "Remote Host"
-      text = "type your remote host"
+      text = "example.com"
+      promptText = "Remote host"
     }
+
     val remotePortField = new TextField {
-      promptText = "Remote Port"
-      text = "type your remote port"
+      text = "80"
+      promptText = "Remote port"
     }
-    val statusLabel = new Label("Ready")
 
-    val startButton = new Button("Start Forwarding")
-    val stopButton = new Button("Stop Forwarding") {
+    val statusLabel = new Label("Stopped")
+    val startButton = new Button("Start")
+    val stopButton = new Button("Stop") {
       disable = true
-    }
-
-    startButton.onAction = { _ =>
-      try {
-        val config = ForwardingConfig(
-          localHostField.text.value,
-          localPortField.text.value.toInt,
-          remoteHostField.text.value,
-          remotePortField.text.value.toInt
-        )
-
-        val server = new PortForwardServer(config)
-        server.start().onComplete {
-          case Success(_) => Platform.runLater {
-            statusLabel.text = s"Forwarding from ${config.localHost}:${config.localPort} to ${config.remoteHost}:${config.remotePort}"
-            startButton.disable = true
-            stopButton.disable = false
-            activeServer = Some(server)
-          }
-          case Failure(ex) => Platform.runLater {
-            statusLabel.text = s"Failed to start: ${ex.getMessage}"
-          }
-        }
-      } catch {
-        case ex: Exception =>
-          statusLabel.text = s"Invalid configuration: ${ex.getMessage}"
-      }
-    }
-
-    stopButton.onAction = { _ =>
-      activeServer.foreach { server =>
-        server.stop().onComplete {
-          case Success(_) => Platform.runLater {
-            statusLabel.text = "Forwarding stopped"
-            startButton.disable = false
-            stopButton.disable = true
-            activeServer = None
-          }
-          case Failure(ex) => Platform.runLater {
-            statusLabel.text = s"Failed to stop: ${ex.getMessage}"
-          }
-        }
-      }
     }
 
     val grid = new GridPane {
       hgap = 10
       vgap = 10
-      padding = Insets(20)
 
-      add(new Label("Local Host:"), 0, 0)
+      add(new Label("Local host:"), 0, 0)
       add(localHostField, 1, 0)
-      add(new Label("Local Port:"), 0, 1)
+      add(new Label("Local port:"), 0, 1)
       add(localPortField, 1, 1)
-      add(new Label("Remote Host:"), 0, 2)
+      add(new Label("Remote host:"), 0, 2)
       add(remoteHostField, 1, 2)
-      add(new Label("Remote Port:"), 0, 3)
+      add(new Label("Remote port:"), 0, 3)
       add(remotePortField, 1, 3)
     }
 
-    val buttonBox = new HBox(10) {
-      alignment = Pos.Center
-      children = Seq(startButton, stopButton)
+    startButton.onAction = _ => {
+      parseConfig(
+        localHostField.text.value,
+        localPortField.text.value,
+        remoteHostField.text.value,
+        remotePortField.text.value
+      ) match {
+        case Right(config) =>
+          startButton.disable = true
+          statusLabel.text = "Starting..."
+
+          runtime.forwardingService.start(config).onComplete {
+            case Success(_) =>
+              Platform.runLater {
+                statusLabel.text = s"Forwarding ${config.listen} -> ${config.target}"
+                stopButton.disable = false
+              }
+
+            case Failure(ex) =>
+              Platform.runLater {
+                statusLabel.text = s"Start failed: ${ex.getMessage}"
+                startButton.disable = false
+              }
+          }(runtime.actorSystem.dispatcher)
+
+        case Left(error) =>
+          statusLabel.text = error
+      }
     }
 
-    new VBox(20) {
-      padding = Insets(20)
-      children = Seq(
-        new Label("Port Forwarding Configuration") { style = "-fx-font-size: 16pt" },
-        grid,
-        buttonBox,
-        statusLabel
-      )
+    stopButton.onAction = _ => {
+      stopButton.disable = true
+      statusLabel.text = "Stopping..."
+
+      runtime.forwardingService.stop().onComplete {
+        case Success(_) =>
+          Platform.runLater {
+            statusLabel.text = "Stopped"
+            startButton.disable = false
+          }
+
+        case Failure(ex) =>
+          Platform.runLater {
+            statusLabel.text = s"Stop failed: ${ex.getMessage}"
+            startButton.disable = false
+          }
+      }(runtime.actorSystem.dispatcher)
+    }
+
+    stage = new JFXApp3.PrimaryStage {
+      title = "Port Forward Server 0.1.1"
+      scene = new Scene(520, 300) {
+        root = new VBox {
+          spacing = 14
+          padding = Insets(20)
+          children = Seq(
+            grid,
+            startButton,
+            stopButton,
+            statusLabel
+          )
+        }
+      }
+
+      onCloseRequest = _ => {
+        runtime.shutdown()
+        ()
+      }
     }
   }
+
+  /**
+   * Converts GUI text fields into a forwarding configuration.
+   *
+   * @param localHost local bind host.
+   * @param localPort local bind port.
+   * @param remoteHost remote target host.
+   * @param remotePort remote target port.
+   * @return parsed configuration or a user-facing error.
+   */
+  private def parseConfig(
+      localHost: String,
+      localPort: String,
+      remoteHost: String,
+      remotePort: String
+  ): Either[String, ForwardingConfig] =
+    for {
+      parsedLocalPort <- parsePort("Local", localPort)
+      parsedRemotePort <- parsePort("Remote", remotePort)
+    } yield ForwardingConfig(
+      listen = Endpoint(localHost, parsedLocalPort),
+      target = Endpoint(remoteHost, parsedRemotePort)
+    )
+
+  /**
+   * Parses one GUI port field.
+   *
+   * @param name field label used in the error message.
+   * @param value textual port.
+   * @return numeric port or descriptive error.
+   */
+  private def parsePort(name: String, value: String): Either[String, Int] =
+    scala.util.Try(value.toInt).toEither.left.map(_ => s"$name port must be a number")
 }
