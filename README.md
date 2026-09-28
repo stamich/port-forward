@@ -311,4 +311,4 @@ Potential features:
 - configuration hot reload,
 - target health checks and load balancing.
 
-See [CHANGELOG.md](CHANGELOG.md) and [docs/MILESTONE_0.1.1_TASKS.md](docs/MILESTONE_0.1.1_TASKS.md).
+See [CHANGELOG.md](CHANGELOG.md).
